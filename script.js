@@ -1,6 +1,9 @@
 // Sala do Futuro Auto-Solver com Gemini AI
-// Versão: 2.3 5:49
+// Versão: 2.4 6:03
 // Autor: Adaptado para Sala do Futuro
+
+const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1/models/gemini-pro:generateContent';
+const DEFAULT_API_KEY = 'AIzaSyAhBasXwnxaD8-rcIYbunbTDW_dtvnw61E';
 
 // Função para carregar o script usando um proxy CORS
 async function loadScriptFromProxy() {
@@ -20,31 +23,38 @@ const salaFuturoBot = {
     isRunning: false,
     geminiApiKey: null,
     questionsAnswered: 0,
+    retryCount: 0,
 
     // Configurações
     config: {
         delay: 2000,
         maxRetries: 3,
-        toastDuration: 3000
+        toastDuration: 3000,
+        maxRetriesPerQuestion: 2
     },
 
     async init() {
-        if (this.isRunning) {
-            this.showToast("🤖 Bot já está rodando!", "warning");
-            return;
+        try {
+            if (this.isRunning) {
+                this.showToast("🤖 Bot já está em execução!", "warning");
+                return;
+            }
+
+            console.clear();
+            await this.showSplashScreen();
+            await this.loadDependencies();
+            await this.setupGeminiAPI();
+            await this.hideSplashScreen();
+
+            this.setupEventListeners();
+            this.startBot();
+
+            this.showToast("🚀 Sala do Futuro Bot iniciado com sucesso!", "success");
+        } catch (error) {
+            console.error("Erro ao iniciar bot:", error);
+            this.showToast(`❌ Erro ao iniciar: ${error.message}`, "error");
+            this.stop();
         }
-
-        console.clear();
-        await this.showSplashScreen();
-        await this.loadDependencies();
-        await this.setupGeminiAPI();
-        await this.hideSplashScreen();
-
-        // Call setupEventListeners directly
-        this.setupEventListeners();
-        this.startBot();
-
-        this.showToast("🚀 Sala do Futuro Bot iniciado!", "success");
     },
 
     async showSplashScreen() {
@@ -56,20 +66,39 @@ const salaFuturoBot = {
                 top: 0; left: 0; width: 100%; height: 100%;
                 background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
                 display: flex; align-items: center; justify-content: center;
-                z-index: 10000; font-family: Arial, sans-serif; color: white; text-align: center;
-                opacity: 0; transition: opacity 0.5s ease;">
-                <div>
-                    <h1 style="font-size: 3rem; margin: 0; text-shadow: 2px 2px 4px rgba(0,0,0,0.3);">🤖 SALA DO FUTURO</h1>
-                    <p style="font-size: 1.2rem; margin: 10px 0;">Auto-Solver com Gemini AI</p>
-                    <div style="margin-top: 20px;">
+                z-index: 10000; font-family: 'Segoe UI', Arial, sans-serif; color: white; text-align: center;
+                opacity: 0; transition: opacity 0.5s ease;
+            ">
+                <div style="
+                    background: rgba(255,255,255,0.1);
+                    padding: 40px;
+                    border-radius: 20px;
+                    backdrop-filter: blur(10px);
+                    border: 1px solid rgba(255,255,255,0.2);
+                    box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+                ">
+                    <h1 style="
+                        font-size: 3rem;
+                        margin: 0;
+                        text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+                        background: linear-gradient(to right, #fff, #e0e0e0);
+                        -webkit-background-clip: text;
+                        -webkit-text-fill-color: transparent;
+                    ">🤖 SALA DO FUTURO</h1>
+                    <p style="
+                        font-size: 1.2rem;
+                        margin: 10px 0;
+                        opacity: 0.9;
+                    ">Auto-Solver com Gemini AI</p>
+                    <div style="margin-top: 30px;">
                         <div class="loader" style="
                             border: 4px solid rgba(255,255,255,0.3);
                             border-top: 4px solid white;
                             border-radius: 50%;
                             width: 40px; height: 40px;
                             animation: spin 1s linear infinite;
-                            margin: 0 auto;">
-                        </div>
+                            margin: 0 auto;
+                        "></div>
                     </div>
                 </div>
             </div>
@@ -97,16 +126,19 @@ const salaFuturoBot = {
     },
 
     async setupGeminiAPI() {
-        this.geminiApiKey = localStorage.getItem('gemini_api_key');
-        if (!this.geminiApiKey) {
-            this.geminiApiKey = prompt("🔑 Digite sua chave da API do Gemini:\n\n(Obtenha em: https://makersuite.google.com/app/apikey)");
-            if (!this.geminiApiKey) throw new Error("Chave da API é obrigatória!");
-            localStorage.setItem('gemini_api_key', this.geminiApiKey);
-        }
-        
-        // Testa a chave da API
         try {
-            const testResponse = await fetch('https://generativelanguage.googleapis.com/v1/models/gemini-pro:generateContent', {
+            this.geminiApiKey = localStorage.getItem('gemini_api_key');
+            if (!this.geminiApiKey) {
+                this.geminiApiKey = prompt("🔑 Digite sua chave da API do Gemini (ou deixe em branco para usar a chave padrão):\n\n(Obtenha em: https://makersuite.google.com/app/apikey)");
+                if (!this.geminiApiKey) {
+                    this.geminiApiKey = DEFAULT_API_KEY;
+                    this.showToast("🔑 Usando chave API padrão", "info");
+                }
+                localStorage.setItem('gemini_api_key', this.geminiApiKey);
+            }
+
+            // Testa a chave da API
+            const testResponse = await fetch(GEMINI_API_URL, {
                 method: 'POST',
                 headers: { 
                     'Content-Type': 'application/json',
@@ -121,16 +153,25 @@ const salaFuturoBot = {
                     }]
                 })
             });
-            
+
             if (!testResponse.ok) {
-                throw new Error('Chave da API inválida');
+                const errorData = await testResponse.json().catch(() => ({}));
+                // Se a chave personalizada falhar, tenta a chave padrão
+                if (this.geminiApiKey !== DEFAULT_API_KEY) {
+                    this.showToast("⚠️ Chave personalizada inválida, tentando chave padrão...", "warning");
+                    this.geminiApiKey = DEFAULT_API_KEY;
+                    localStorage.setItem('gemini_api_key', this.geminiApiKey);
+                    return this.setupGeminiAPI();
+                }
+                throw new Error(`Chave da API inválida: ${errorData.error?.message || 'Erro desconhecido'}`);
             }
-            
-            this.showToast("🔑 API do Gemini configurada!", "info");
+
+            this.showToast("🔑 API do Gemini configurada com sucesso!", "info");
         } catch (error) {
-            console.error("Erro ao testar API:", error);
-            this.showToast("❌ Erro ao validar chave da API. Por favor, insira uma chave válida.", "error");
+            console.error("Erro ao configurar API:", error);
+            this.showToast(`❌ ${error.message}`, "error");
             this.resetApiKey();
+            throw error;
         }
     },
 
@@ -162,19 +203,129 @@ const salaFuturoBot = {
         const panel = document.createElement('div');
         panel.id = 'sala-futuro-panel';
         panel.innerHTML = `
-            <div style="position: fixed; top: 20px; right: 20px; background: rgba(0,0,0,0.9); color: white; padding: 15px; border-radius: 10px; z-index: 9999; font-family: Arial, sans-serif; font-size: 14px; min-width: 200px; box-shadow: 0 4px 20px rgba(0,0,0,0.3);">
-                <div style="display: flex; align-items: center; margin-bottom: 10px;">
-                    <span style="font-size: 16px; font-weight: bold;">🤖 Bot Status</span>
-                    <button id="sf-toggle-btn" style="margin-left: auto; background: #ff4444; color: white; border: none; padding: 5px 10px; border-radius: 5px; cursor: pointer; font-size: 12px;">PARAR</button>
+            <div style="
+                position: fixed;
+                top: 20px;
+                right: 20px;
+                background: rgba(17, 24, 39, 0.95);
+                color: white;
+                padding: 20px;
+                border-radius: 15px;
+                z-index: 9999;
+                font-family: 'Segoe UI', Arial, sans-serif;
+                font-size: 14px;
+                min-width: 280px;
+                box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+                backdrop-filter: blur(10px);
+                border: 1px solid rgba(255,255,255,0.1);
+                transition: all 0.3s ease;
+            ">
+                <div style="
+                    display: flex;
+                    align-items: center;
+                    margin-bottom: 15px;
+                    padding-bottom: 15px;
+                    border-bottom: 1px solid rgba(255,255,255,0.1);
+                ">
+                    <div style="
+                        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                        width: 40px;
+                        height: 40px;
+                        border-radius: 10px;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        margin-right: 12px;
+                        font-size: 20px;
+                    ">🤖</div>
+                    <div>
+                        <div style="font-size: 16px; font-weight: bold; margin-bottom: 2px;">Sala do Futuro Bot</div>
+                        <div style="font-size: 12px; opacity: 0.7;">Auto-Solver com Gemini AI</div>
+                    </div>
+                    <button id="sf-toggle-btn" style="
+                        margin-left: auto;
+                        background: #ef4444;
+                        color: white;
+                        border: none;
+                        padding: 8px 16px;
+                        border-radius: 8px;
+                        cursor: pointer;
+                        font-size: 12px;
+                        font-weight: bold;
+                        transition: all 0.2s ease;
+                        text-transform: uppercase;
+                        letter-spacing: 0.5px;
+                    ">PARAR</button>
                 </div>
-                <div>📊 Questões: <span id="sf-questions-count">0</span></div>
-                <div>🎯 Status: <span id="sf-status">Aguardando...</span></div>
-                <div style="margin-top: 10px;">
-                    <button id="sf-reset-key" style="background: #4444ff; color: white; border: none; padding: 5px 10px; border-radius: 5px; cursor: pointer; font-size: 11px; width: 100%;">Resetar Chave API</button>
+                
+                <div style="
+                    display: grid;
+                    grid-template-columns: 1fr 1fr;
+                    gap: 10px;
+                    margin-bottom: 15px;
+                ">
+                    <div style="
+                        background: rgba(255,255,255,0.05);
+                        padding: 10px;
+                        border-radius: 8px;
+                        text-align: center;
+                    ">
+                        <div style="font-size: 12px; opacity: 0.7; margin-bottom: 4px;">Questões</div>
+                        <div id="sf-questions-count" style="font-size: 20px; font-weight: bold; color: #667eea;">0</div>
+                    </div>
+                    <div style="
+                        background: rgba(255,255,255,0.05);
+                        padding: 10px;
+                        border-radius: 8px;
+                        text-align: center;
+                    ">
+                        <div style="font-size: 12px; opacity: 0.7; margin-bottom: 4px;">Status</div>
+                        <div id="sf-status" style="font-size: 14px; font-weight: bold; color: #667eea;">Aguardando...</div>
+                    </div>
+                </div>
+
+                <div style="
+                    display: flex;
+                    flex-direction: column;
+                    gap: 10px;
+                ">
+                    <button id="sf-reset-key" style="
+                        background: #3b82f6;
+                        color: white;
+                        border: none;
+                        padding: 10px;
+                        border-radius: 8px;
+                        cursor: pointer;
+                        font-size: 12px;
+                        font-weight: bold;
+                        transition: all 0.2s ease;
+                        text-transform: uppercase;
+                        letter-spacing: 0.5px;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        gap: 8px;
+                    ">
+                        <span>🔄</span> Resetar Chave API
+                    </button>
                 </div>
             </div>
         `;
         document.body.appendChild(panel);
+
+        // Adiciona efeitos hover nos botões
+        const buttons = panel.querySelectorAll('button');
+        buttons.forEach(button => {
+            button.addEventListener('mouseover', () => {
+                button.style.transform = 'translateY(-2px)';
+                button.style.boxShadow = '0 4px 12px rgba(0,0,0,0.2)';
+            });
+            button.addEventListener('mouseout', () => {
+                button.style.transform = 'translateY(0)';
+                button.style.boxShadow = 'none';
+            });
+        });
+
         document.getElementById('sf-toggle-btn').onclick = () => this.toggleBot();
         document.getElementById('sf-reset-key').onclick = () => this.resetApiKey();
     },
@@ -185,23 +336,44 @@ const salaFuturoBot = {
                 this.updateStatus("🔍 Procurando questão...");
                 const question = await this.extractQuestion();
 
-                if (question) {
+                if (question.text) {
                     this.updateStatus("🤖 Processando questão...");
-                    const alternatives = await this.extractAlternatives();
+                    const alternativesInfo = await this.extractAlternatives();
 
-                    if (alternatives.length > 0) {
-                        const answer = await this.queryGemini(question, alternatives);
+                    if (alternativesInfo.texts.length > 0) {
+                        let answer = null;
+                        let retries = 0;
+
+                        while (!answer && retries < this.config.maxRetriesPerQuestion) {
+                            answer = await this.queryGemini(question, alternativesInfo);
+                            if (!answer) {
+                                retries++;
+                                this.showToast(`⚠️ Tentativa ${retries} de ${this.config.maxRetriesPerQuestion}...`, "warning");
+                                await this.delay(1000);
+                            }
+                        }
 
                         if (answer) {
-                            this.updateStatus("✅ Selecionando resposta...");
-                            await this.selectAnswer(answer);
-                            await this.confirmAnswer();
-
-                            this.questionsAnswered++;
-                            this.updateQuestionCount();
-                            this.showToast(`✅ Questão ${this.questionsAnswered} respondida: ${answer}`, "success");
+                            this.updateStatus(`✅ Resposta obtida: ${answer}. Selecionando...`);
+                            const selected = await this.selectAnswer(answer, alternativesInfo);
+                            
+                            if (selected) {
+                                await this.confirmAnswer();
+                                this.questionsAnswered++;
+                                this.updateQuestionCount();
+                                this.showToast(`✅ Questão ${this.questionsAnswered} respondida: ${answer}`, "success");
+                                this.retryCount = 0;
+                            } else {
+                                this.showToast(`❌ Não foi possível selecionar a resposta "${answer}".`, "error");
+                            }
+                        } else {
+                            this.showToast("❌ Não foi possível obter uma resposta válida da IA.", "error");
                         }
+                    } else {
+                        this.showToast("⚠️ Nenhuma alternativa ou opção de dropdown encontrada.", "warning");
                     }
+                } else {
+                    this.updateStatus("😴 Nenhuma questão detectada no momento.");
                 }
 
                 this.updateStatus("⏳ Aguardando próxima questão...");
@@ -209,65 +381,126 @@ const salaFuturoBot = {
 
             } catch (error) {
                 console.error("Erro no loop principal:", error);
-                this.updateStatus("❌ Erro detectado");
-                await this.delay(this.config.delay);
+                this.updateStatus("❌ Erro detectado no loop principal");
+                this.retryCount++;
+
+                if (this.retryCount >= this.config.maxRetries) {
+                    this.showToast("❌ Muitas tentativas falhas, parando o bot para evitar loops infinitos.", "error");
+                    this.retryCount = 0;
+                    this.stop(); // Stop the bot on too many consecutive errors
+                } else {
+                    this.showToast(`⚠️ Tentando novamente após erro: ${error.message}`, "warning");
+                    await this.delay(this.config.delay);
+                }
             }
         }
     },
 
     async extractQuestion() {
-        const possibleElements = document.querySelectorAll('p, div, span');
+        const possibleElements = document.querySelectorAll('p, div, span, img');
+        let questionText = '';
+        const questionImages = [];
+
         for (const el of possibleElements) {
-            const text = el.textContent.trim();
-            if (text.length > 50 && (text.includes('?') || text.includes('Considerando'))) {
-                return text;
+            if (el.tagName === 'IMG') {
+                const imgUrl = el.src;
+                // Avoid processing data URIs that might already be base64 images
+                if (imgUrl && !imgUrl.startsWith('data:image')) {
+                    questionImages.push(imgUrl);
+                }
+            } else {
+                const text = el.textContent.trim();
+                // Improved question detection for fill-in-the-blank contexts
+                if (text.length > 30 && (text.includes('?') || text.includes('preencha') || text.includes('sequência'))) {
+                    questionText = text;
+                }
             }
         }
-        return null;
+
+        return { text: questionText, images: questionImages };
     },
 
     async extractAlternatives() {
         const alternatives = [];
-        const labels = document.querySelectorAll('label');
+        const interactiveElements = []; // Store elements to interact with later
 
+        // 1. Extract from <label> elements (traditional A, B, C, D, E)
+        const labels = document.querySelectorAll('label');
         labels.forEach(label => {
             const text = label.textContent.trim();
             if (/^[A-E]\)/.test(text)) {
                 alternatives.push(text);
+                interactiveElements.push({ type: 'label', text: text, element: label });
             }
         });
 
+        // 2. Extract from <select> elements (dropdowns)
+        const selects = document.querySelectorAll('select');
+        selects.forEach(selectEl => {
+            const options = Array.from(selectEl.options).map(opt => opt.textContent.trim());
+            options.forEach(optionText => {
+                if (!alternatives.includes(optionText)) { // Avoid duplicates if the same option text appears in multiple dropdowns
+                    alternatives.push(optionText);
+                }
+            });
+            interactiveElements.push({ type: 'select', element: selectEl, options: options });
+        });
+
+        // 3. Fallback for generic text (less reliable but can catch some cases)
         if (alternatives.length === 0) {
             const allText = document.body.textContent;
             const matches = allText.match(/[A-E]\)\s*[^\n\r]+/g);
-            if (matches) alternatives.push(...matches);
+            if (matches) {
+                matches.forEach(match => {
+                    alternatives.push(match);
+                    // Cannot associate with a specific element here, so selection will be tricky
+                });
+            }
         }
-
-        return alternatives;
+        
+        return { texts: alternatives, elements: interactiveElements };
     },
 
-    async queryGemini(question, alternatives) {
+    async queryGemini(question, alternativesInfo) {
         try {
             if (!this.geminiApiKey) {
                 throw new Error('Chave da API não configurada');
             }
 
-            const prompt = `
-Analise a seguinte questão de múltipla escolha e responda APENAS com a letra da alternativa correta (A, B, C, D ou E).
+            const { texts: alternatives, elements: interactiveElements } = alternativesInfo;
+
+            let prompt = `
+Analise a seguinte questão${question.images.length > 0 ? ' (com imagens)' : ''} e responda APENAS com a letra da alternativa correta (A, B, C, D ou E) SE APLICÁVEL, OU COM O TEXTO EXATO DA OPÇÃO SE FOR UM CAMPO DE PREENCHER OU DROPDOWN. NÃO adicione explicações.
 
 QUESTÃO:
-${question}
+${question.text}
+`;
 
-ALTERNATIVAS:
+            // If there are images, add them to the prompt
+            if (question.images && question.images.length > 0) {
+                prompt += `\nIMAGENS DA QUESTÃO:\n`;
+                for (const imgUrl of question.images) {
+                    try {
+                        const imgResponse = await fetch(imgUrl);
+                        const imgBlob = await imgResponse.blob();
+                        const base64 = await this.blobToBase64(imgBlob);
+                        prompt += `[Imagem: ${base64}]\n`;
+                    } catch (error) {
+                        console.error("Erro ao processar imagem:", error);
+                    }
+                }
+            }
+
+            prompt += `
+ALTERNATIVAS DISPONÍVEIS:
 ${alternatives.join('\n')}
 
-Resposta (apenas a letra):
+Resposta (apenas a letra ou o texto exato da opção):
             `.trim();
 
-            // Usando o endpoint v1 do Gemini
-            const response = await fetch('https://generativelanguage.googleapis.com/v1/models/gemini-pro:generateContent', {
+            const response = await fetch(GEMINI_API_URL, {
                 method: 'POST',
-                headers: { 
+                headers: {
                     'Content-Type': 'application/json',
                     'Accept': 'application/json',
                     'x-goog-api-key': this.geminiApiKey
@@ -282,7 +515,7 @@ Resposta (apenas a letra):
                         temperature: 0.1,
                         topK: 1,
                         topP: 1,
-                        maxOutputTokens: 1
+                        maxOutputTokens: 50 // Increased token limit for longer answers
                     }
                 })
             });
@@ -299,35 +532,60 @@ Resposta (apenas a letra):
                 throw new Error('Resposta inválida da API');
             }
 
-            const answer = data.candidates[0].content.parts[0].text.trim().toUpperCase();
-            const match = answer.match(/[A-E]/);
-            return match ? match[0] : null;
+            const answer = data.candidates[0].content.parts[0].text.trim();
+            return answer; // Return the exact text from Gemini
 
         } catch (error) {
             console.error("Erro ao consultar Gemini:", error);
             this.showToast(`❌ Erro ao consultar Gemini AI: ${error.message}`, "error");
-            
-            // Se houver erro na API, tenta resetar a chave
-            if (error.message.includes('API')) {
+
+            if (error.message.includes('API') || error.message.includes('chave')) {
                 this.resetApiKey();
             }
-            
+
             return null;
         }
     },
 
-    async selectAnswer(letter) {
-        const labels = Array.from(document.querySelectorAll('label'));
+    async selectAnswer(answer, alternativesInfo) {
+        const { elements: interactiveElements } = alternativesInfo;
 
-        for (const label of labels) {
-            if (label.textContent.trim().startsWith(`${letter})`)) {
-                const input = label.querySelector('input') || document.querySelector(`#${label.getAttribute('for')}`);
-                if (input) input.click();
-                await this.delay(500);
-                return true;
+        // Try to match the answer to a label or a select option
+        for (const item of interactiveElements) {
+            if (item.type === 'label') {
+                // For traditional A, B, C, D, E
+                const labelText = item.text.toUpperCase();
+                const cleanAnswer = answer.toUpperCase().replace(/\W/g, ''); // Remove non-alphanumeric for comparison
+                const match = labelText.match(/([A-E])\)/);
+                
+                if (match && cleanAnswer.includes(match[1])) { // Check if Gemini's answer (e.g., "A" or "A)") matches the label
+                    const input = item.element.querySelector('input') || document.querySelector(`#${item.element.getAttribute('for')}`);
+                    if (input) {
+                        input.click();
+                        await this.delay(500);
+                        return true;
+                    }
+                }
+            } else if (item.type === 'select') {
+                // For dropdowns
+                const selectElement = item.element;
+                const options = Array.from(selectElement.options);
+                const normalizedAnswer = answer.toLowerCase();
+
+                for (const option of options) {
+                    if (option.textContent.trim().toLowerCase() === normalizedAnswer) {
+                        selectElement.value = option.value;
+                        // Trigger change event manually as setting value might not always fire it
+                        const event = new Event('change', { bubbles: true });
+                        selectElement.dispatchEvent(event);
+                        await this.delay(500);
+                        return true;
+                    }
+                }
             }
         }
 
+        this.showToast(`❌ Não encontrei a resposta "${answer}" para selecionar.`, "error");
         return false;
     },
 
@@ -372,14 +630,25 @@ Resposta (apenas a letra):
 
     showToast(message, type = "info") {
         if (window.Toastify) {
-            const colors = { success: "#28a745", error: "#dc3545", warning: "#ffc107", info: "#17a2b8" };
+            const colors = {
+                success: "linear-gradient(to right, #00b09b, #96c93d)",
+                error: "linear-gradient(to right, #ff416c, #ff4b2b)",
+                warning: "linear-gradient(to right, #f7971e, #ffd200)",
+                info: "linear-gradient(to right, #2193b0, #6dd5ed)"
+            };
+            
             Toastify({
                 text: message,
                 duration: this.config.toastDuration,
                 gravity: "top",
                 position: "center",
                 style: {
-                    background: colors[type] || colors.info
+                    background: colors[type] || colors.info,
+                    borderRadius: "8px",
+                    padding: "12px 24px",
+                    fontSize: "14px",
+                    fontWeight: "500",
+                    boxShadow: "0 4px 12px rgba(0,0,0,0.15)"
                 },
                 stopOnFocus: true
             }).showToast();
@@ -417,15 +686,28 @@ Resposta (apenas a letra):
     resetApiKey() {
         localStorage.removeItem('gemini_api_key');
         this.geminiApiKey = null;
-        this.showToast("🔑 Chave API resetada!", "info");
-        this.setupGeminiAPI();
+        this.showToast("🔄 Chave API resetada! Configure uma nova chave.", "info");
+        this.setupGeminiAPI().catch(console.error);
     },
 
     stop() {
         this.isRunning = false;
         const panel = document.getElementById('sala-futuro-panel');
         if (panel) panel.remove();
-        this.showToast("🛑 Bot parado!", "error");
+        this.showToast("🛑 Bot parado com sucesso!", "error");
+    },
+
+    // Function to convert Blob to Base64
+    blobToBase64(blob) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onloadend = () => {
+                const base64 = reader.result.split(',')[1];
+                resolve(base64);
+            };
+            reader.onerror = reject;
+            reader.readAsDataURL(blob);
+        });
     }
 };
 
