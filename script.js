@@ -1,5 +1,5 @@
 // Sala do Futuro Auto-Solver com Gemini AI
-// Versão: 2.2 5:45
+// Versão: 2.3 5:49
 // Autor: Adaptado para Sala do Futuro
 
 // Função para carregar o script usando um proxy CORS
@@ -103,7 +103,35 @@ const salaFuturoBot = {
             if (!this.geminiApiKey) throw new Error("Chave da API é obrigatória!");
             localStorage.setItem('gemini_api_key', this.geminiApiKey);
         }
-        this.showToast("🔑 API do Gemini configurada!", "info");
+        
+        // Testa a chave da API
+        try {
+            const testResponse = await fetch('https://generativelanguage.googleapis.com/v1/models/gemini-pro:generateContent', {
+                method: 'POST',
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
+                    'x-goog-api-key': this.geminiApiKey
+                },
+                body: JSON.stringify({
+                    contents: [{
+                        parts: [{
+                            text: "Test"
+                        }]
+                    }]
+                })
+            });
+            
+            if (!testResponse.ok) {
+                throw new Error('Chave da API inválida');
+            }
+            
+            this.showToast("🔑 API do Gemini configurada!", "info");
+        } catch (error) {
+            console.error("Erro ao testar API:", error);
+            this.showToast("❌ Erro ao validar chave da API. Por favor, insira uma chave válida.", "error");
+            this.resetApiKey();
+        }
     },
 
     setupEventListeners() {
@@ -220,6 +248,10 @@ const salaFuturoBot = {
 
     async queryGemini(question, alternatives) {
         try {
+            if (!this.geminiApiKey) {
+                throw new Error('Chave da API não configurada');
+            }
+
             const prompt = `
 Analise a seguinte questão de múltipla escolha e responda APENAS com a letra da alternativa correta (A, B, C, D ou E).
 
@@ -232,11 +264,13 @@ ${alternatives.join('\n')}
 Resposta (apenas a letra):
             `.trim();
 
-            const response = await fetch(`https://generativelanguage.googleapis.com/v1/models/gemini-pro:generateContent?key=${this.geminiApiKey}`, {
+            // Usando o endpoint v1 do Gemini
+            const response = await fetch('https://generativelanguage.googleapis.com/v1/models/gemini-pro:generateContent', {
                 method: 'POST',
                 headers: { 
                     'Content-Type': 'application/json',
-                    'Accept': 'application/json'
+                    'Accept': 'application/json',
+                    'x-goog-api-key': this.geminiApiKey
                 },
                 body: JSON.stringify({
                     contents: [{
@@ -255,11 +289,13 @@ Resposta (apenas a letra):
 
             if (!response.ok) {
                 const errorData = await response.json().catch(() => ({}));
+                console.error('Resposta da API:', errorData);
                 throw new Error(`Erro na API: ${response.status} - ${errorData.error?.message || 'Erro desconhecido'}`);
             }
 
             const data = await response.json();
             if (!data.candidates?.[0]?.content?.parts?.[0]?.text) {
+                console.error('Resposta inválida:', data);
                 throw new Error('Resposta inválida da API');
             }
 
@@ -270,6 +306,12 @@ Resposta (apenas a letra):
         } catch (error) {
             console.error("Erro ao consultar Gemini:", error);
             this.showToast(`❌ Erro ao consultar Gemini AI: ${error.message}`, "error");
+            
+            // Se houver erro na API, tenta resetar a chave
+            if (error.message.includes('API')) {
+                this.resetApiKey();
+            }
+            
             return null;
         }
     },
