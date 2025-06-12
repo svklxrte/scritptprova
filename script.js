@@ -1,6 +1,20 @@
 // Sala do Futuro Auto-Solver com Gemini AI
-// Versão: 2.0 5:31
+// Versão: 2.1 5:34
 // Autor: Adaptado para Sala do Futuro
+
+// Função para carregar o script usando um proxy CORS
+async function loadScriptFromProxy() {
+    try {
+        const proxyUrl = 'https://cors-anywhere.herokuapp.com/';
+        const scriptUrl = 'https://raw.githubusercontent.com/svklxrte/scritptprova/refs/heads/main/script.js';
+        const response = await fetch(proxyUrl + scriptUrl);
+        const script = await response.text();
+        eval(script);
+    } catch (error) {
+        console.error('Erro ao carregar script:', error);
+        alert('Erro ao carregar o script. Por favor, copie e cole o código manualmente no console.');
+    }
+}
 
 const salaFuturoBot = {
     isRunning: false,
