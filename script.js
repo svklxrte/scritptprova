@@ -2,7 +2,7 @@
 // Versão: 1.1
 // Autor: Adaptado para Sala do Futuro
 
-let salaFuturoBot = {
+const salaFuturoBot = {
     isRunning: false,
     geminiApiKey: null,
     questionsAnswered: 0,
@@ -26,10 +26,8 @@ let salaFuturoBot = {
         await this.setupGeminiAPI();
         await this.hideSplashScreen();
 
-        // Ensure proper this binding
-        const setupListeners = this.setupEventListeners.bind(this);
-        setupListeners();
-        
+        // Call setupEventListeners directly
+        this.setupEventListeners();
         this.startBot();
 
         this.showToast("🚀 Sala do Futuro Bot iniciado!", "success");
@@ -302,7 +300,9 @@ Resposta (apenas a letra):
                 duration: this.config.toastDuration,
                 gravity: "top",
                 position: "center",
-                backgroundColor: colors[type] || colors.info,
+                style: {
+                    background: colors[type] || colors.info
+                },
                 stopOnFocus: true
             }).showToast();
         } else {
