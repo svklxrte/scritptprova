@@ -1,5 +1,5 @@
 // Sala do Futuro Auto-Solver com Gemini AI
-// Versão: 2.1 5:34
+// Versão: 2.2 5:45
 // Autor: Adaptado para Sala do Futuro
 
 // Função para carregar o script usando um proxy CORS
@@ -232,22 +232,44 @@ ${alternatives.join('\n')}
 Resposta (apenas a letra):
             `.trim();
 
-            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${this.geminiApiKey}`, {
+            const response = await fetch(`https://generativelanguage.googleapis.com/v1/models/gemini-pro:generateContent?key=${this.geminiApiKey}`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json'
+                },
+                body: JSON.stringify({
+                    contents: [{
+                        parts: [{
+                            text: prompt
+                        }]
+                    }],
+                    generationConfig: {
+                        temperature: 0.1,
+                        topK: 1,
+                        topP: 1,
+                        maxOutputTokens: 1
+                    }
+                })
             });
 
-            if (!response.ok) throw new Error(`Erro na API: ${response.status}`);
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(`Erro na API: ${response.status} - ${errorData.error?.message || 'Erro desconhecido'}`);
+            }
 
             const data = await response.json();
+            if (!data.candidates?.[0]?.content?.parts?.[0]?.text) {
+                throw new Error('Resposta inválida da API');
+            }
+
             const answer = data.candidates[0].content.parts[0].text.trim().toUpperCase();
             const match = answer.match(/[A-E]/);
             return match ? match[0] : null;
 
         } catch (error) {
             console.error("Erro ao consultar Gemini:", error);
-            this.showToast("❌ Erro ao consultar Gemini AI", "error");
+            this.showToast(`❌ Erro ao consultar Gemini AI: ${error.message}`, "error");
             return null;
         }
     },
