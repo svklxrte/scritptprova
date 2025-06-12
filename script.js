@@ -7,6 +7,7 @@ let salaFuturoBot = {
     geminiApiKey: null,
     questionsAnswered: 0,
 
+    // Configurações
     config: {
         delay: 2000,
         maxRetries: 3,
@@ -25,11 +26,8 @@ let salaFuturoBot = {
         await this.setupGeminiAPI();
         await this.hideSplashScreen();
 
-        this.isRunning = true;
-        this.questionsAnswered = 0;
-
-        this.createControlPanel();
-        this.mainLoop();
+        this.setupEventListeners();
+        this.startBot();
 
         this.showToast("🚀 Sala do Futuro Bot iniciado!", "success");
     },
@@ -93,6 +91,30 @@ let salaFuturoBot = {
         this.showToast("🔑 API do Gemini configurada!", "info");
     },
 
+    setupEventListeners() {
+        // Adiciona listeners para eventos importantes
+        window.addEventListener('beforeunload', () => {
+            if (this.isRunning) {
+                this.stop();
+            }
+        });
+
+        // Listener para tecla de atalho (Ctrl + Shift + S)
+        document.addEventListener('keydown', (e) => {
+            if (e.ctrlKey && e.shiftKey && e.key === 'S') {
+                e.preventDefault();
+                this.toggleBot();
+            }
+        });
+    },
+
+    startBot() {
+        this.isRunning = true;
+        this.questionsAnswered = 0;
+        this.createControlPanel();
+        this.mainLoop();
+    },
+
     createControlPanel() {
         const panel = document.createElement('div');
         panel.id = 'sala-futuro-panel';
@@ -110,7 +132,6 @@ let salaFuturoBot = {
             </div>
         `;
         document.body.appendChild(panel);
-
         document.getElementById('sf-toggle-btn').onclick = () => this.toggleBot();
         document.getElementById('sf-reset-key').onclick = () => this.resetApiKey();
     },
@@ -327,6 +348,7 @@ Resposta (apenas a letra):
     }
 };
 
+// Verificar ambiente
 if (window.location.hostname.includes('salafuturo') || window.location.hostname.includes('educacao.sp.gov.br')) {
     salaFuturoBot.init().catch(console.error);
 } else {
