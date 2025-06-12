@@ -1,5 +1,5 @@
 // Sala do Futuro Auto-Solver com Gemini AI
-// Versão: 1.1
+// Versão: 2.0 5:31
 // Autor: Adaptado para Sala do Futuro
 
 const salaFuturoBot = {
