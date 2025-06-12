@@ -26,7 +26,10 @@ let salaFuturoBot = {
         await this.setupGeminiAPI();
         await this.hideSplashScreen();
 
-        this.setupEventListeners();
+        // Ensure proper this binding
+        const setupListeners = this.setupEventListeners.bind(this);
+        setupListeners();
+        
         this.startBot();
 
         this.showToast("🚀 Sala do Futuro Bot iniciado!", "success");
