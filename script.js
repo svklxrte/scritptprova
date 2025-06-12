@@ -7,7 +7,6 @@ let salaFuturoBot = {
     geminiApiKey: null,
     questionsAnswered: 0,
 
-    // Configurações
     config: {
         delay: 2000,
         maxRetries: 3,
@@ -26,8 +25,11 @@ let salaFuturoBot = {
         await this.setupGeminiAPI();
         await this.hideSplashScreen();
 
-        this.setupEventListeners();
-        this.startBot();
+        this.isRunning = true;
+        this.questionsAnswered = 0;
+
+        this.createControlPanel();
+        this.mainLoop();
 
         this.showToast("🚀 Sala do Futuro Bot iniciado!", "success");
     },
@@ -91,13 +93,6 @@ let salaFuturoBot = {
         this.showToast("🔑 API do Gemini configurada!", "info");
     },
 
-    startBot() {
-        this.isRunning = true;
-        this.questionsAnswered = 0;
-        this.createControlPanel();
-        this.mainLoop();
-    },
-
     createControlPanel() {
         const panel = document.createElement('div');
         panel.id = 'sala-futuro-panel';
@@ -115,6 +110,7 @@ let salaFuturoBot = {
             </div>
         `;
         document.body.appendChild(panel);
+
         document.getElementById('sf-toggle-btn').onclick = () => this.toggleBot();
         document.getElementById('sf-reset-key').onclick = () => this.resetApiKey();
     },
@@ -331,7 +327,6 @@ Resposta (apenas a letra):
     }
 };
 
-// Verificar ambiente
 if (window.location.hostname.includes('salafuturo') || window.location.hostname.includes('educacao.sp.gov.br')) {
     salaFuturoBot.init().catch(console.error);
 } else {
