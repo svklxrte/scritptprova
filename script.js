@@ -1,23 +1,9 @@
 // Sala do Futuro Auto-Solver com Gemini AI
-// Versão: 2.4 6:03
+// Versão: 2.4 6:07
 // Autor: Adaptado para Sala do Futuro
 
-const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1/models/gemini-pro:generateContent';
+const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent';
 const DEFAULT_API_KEY = 'AIzaSyAhBasXwnxaD8-rcIYbunbTDW_dtvnw61E';
-
-// Função para carregar o script usando um proxy CORS
-async function loadScriptFromProxy() {
-    try {
-        const proxyUrl = 'https://cors-anywhere.herokuapp.com/';
-        const scriptUrl = 'https://raw.githubusercontent.com/svklxrte/scritptprova/refs/heads/main/script.js';
-        const response = await fetch(proxyUrl + scriptUrl);
-        const script = await response.text();
-        eval(script);
-    } catch (error) {
-        console.error('Erro ao carregar script:', error);
-        alert('Erro ao carregar o script. Por favor, copie e cole o código manualmente no console.');
-    }
-}
 
 const salaFuturoBot = {
     isRunning: false,
@@ -126,24 +112,24 @@ const salaFuturoBot = {
     },
 
     async setupGeminiAPI() {
+        let currentKey = null;
         try {
-            this.geminiApiKey = localStorage.getItem('gemini_api_key');
-            if (!this.geminiApiKey) {
-                this.geminiApiKey = prompt("🔑 Digite sua chave da API do Gemini (ou deixe em branco para usar a chave padrão):\n\n(Obtenha em: https://makersuite.google.com/app/apikey)");
-                if (!this.geminiApiKey) {
-                    this.geminiApiKey = DEFAULT_API_KEY;
+            currentKey = localStorage.getItem('gemini_api_key');
+            if (!currentKey) {
+                currentKey = prompt("🔑 Digite sua chave da API do Gemini (ou deixe em branco para usar a chave padrão):\n\n(Obtenha em: https://makersuite.google.com/app/apikey)");
+                if (!currentKey) {
+                    currentKey = DEFAULT_API_KEY;
                     this.showToast("🔑 Usando chave API padrão", "info");
                 }
-                localStorage.setItem('gemini_api_key', this.geminiApiKey);
             }
 
             // Testa a chave da API
             const testResponse = await fetch(GEMINI_API_URL, {
                 method: 'POST',
-                headers: { 
+                headers: {
                     'Content-Type': 'application/json',
                     'Accept': 'application/json',
-                    'x-goog-api-key': this.geminiApiKey
+                    'x-goog-api-key': currentKey // Use currentKey for testing
                 },
                 body: JSON.stringify({
                     contents: [{
@@ -157,21 +143,29 @@ const salaFuturoBot = {
             if (!testResponse.ok) {
                 const errorData = await testResponse.json().catch(() => ({}));
                 // Se a chave personalizada falhar, tenta a chave padrão
-                if (this.geminiApiKey !== DEFAULT_API_KEY) {
+                if (currentKey !== DEFAULT_API_KEY) {
                     this.showToast("⚠️ Chave personalizada inválida, tentando chave padrão...", "warning");
-                    this.geminiApiKey = DEFAULT_API_KEY;
-                    localStorage.setItem('gemini_api_key', this.geminiApiKey);
-                    return this.setupGeminiAPI();
+                    localStorage.setItem('gemini_api_key', DEFAULT_API_KEY);
+                    this.geminiApiKey = DEFAULT_API_KEY; // Set it here before re-calling
+                    return this.setupGeminiAPI(); // Recurse with default key
                 }
                 throw new Error(`Chave da API inválida: ${errorData.error?.message || 'Erro desconhecido'}`);
             }
 
+            localStorage.setItem('gemini_api_key', currentKey);
+            this.geminiApiKey = currentKey; // Only set this.geminiApiKey after successful validation
             this.showToast("🔑 API do Gemini configurada com sucesso!", "info");
         } catch (error) {
             console.error("Erro ao configurar API:", error);
             this.showToast(`❌ ${error.message}`, "error");
-            this.resetApiKey();
-            throw error;
+            // Only reset if it's not already the default key, to avoid loop
+            if (currentKey && currentKey !== DEFAULT_API_KEY) {
+                this.resetApiKey();
+            } else if (!currentKey) { // If no key was ever set, ensure it asks again
+                localStorage.removeItem('gemini_api_key');
+                this.geminiApiKey = null;
+            }
+            throw error; // Re-throw to propagate the error to init()
         }
     },
 
@@ -476,7 +470,6 @@ QUESTÃO:
 ${question.text}
 `;
 
-            // If there are images, add them to the prompt
             if (question.images && question.images.length > 0) {
                 prompt += `\nIMAGENS DA QUESTÃO:\n`;
                 for (const imgUrl of question.images) {
@@ -515,7 +508,7 @@ Resposta (apenas a letra ou o texto exato da opção):
                         temperature: 0.1,
                         topK: 1,
                         topP: 1,
-                        maxOutputTokens: 50 // Increased token limit for longer answers
+                        maxOutputTokens: 50
                     }
                 })
             });
@@ -533,7 +526,7 @@ Resposta (apenas a letra ou o texto exato da opção):
             }
 
             const answer = data.candidates[0].content.parts[0].text.trim();
-            return answer; // Return the exact text from Gemini
+            return answer;
 
         } catch (error) {
             console.error("Erro ao consultar Gemini:", error);
